@@ -5,7 +5,7 @@ import (
 
 	"github.com/joho/godotenv"
 
-	model "awesome-portal/backend/db"
+	db "awesome-portal/backend/database"
 )
 
 const GH_API_URL = "https://api.github.com"
@@ -14,9 +14,9 @@ const AW_ROOT = "https://github.com/sindresorhus/awesome"
 func main() {
 	_ = godotenv.Load()
 
-	model.Connect()
+	db.Connect()
 
 	// indexer.Index(AW_ROOT, 0)
 	// fmt.Print(json)
-	server.Start_server()
+	server.StartServer()
 }
