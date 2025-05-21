@@ -106,39 +106,6 @@ func contentToString(d1 []byte, d2 []byte) string {
 	return ""
 }
 
-// walk up the tree and get all textual content in an ordered list
-func getParentsPath(node ast.Node) (parents []string) {
-	parents = []string{}
-
-	if node == nil {
-		return
-	}
-
-	getParentsPath(node.GetParent())
-
-	content := getContent(node)
-	if len(content) > 0 {
-		model.Log.Debug("PARENT: ", content)
-	}
-
-	return
-}
-
-// if there is a sibling type of "text" => use it
-// if there is a sibling type of "link" => use it
-// otherwise, placeholder with
-func getFirstChildLabel(node ast.Node) string {
-	children := node.GetChildren()
-	content := ""
-	for _, node := range children {
-		if child, ok := node.(*ast.Text); ok {
-			content = getContent(child)
-			break
-		}
-	}
-	return content
-}
-
 // see if the yaml content looks like a AWL Index by looking up the "official" badge regex
 func isAwesomeIndexPage(content []byte) bool {
 	return strings.Contains(string(content), "https://awesome.re/badge/")
@@ -202,6 +169,81 @@ func fetch(url string, method string, headers map[string]string) (rc int, payloa
 	if error != nil {
 		model.Log.Error(error)
 	}
+
+	return
+}
+
+func GetParagraphContent(doc ast.Node, pLink *model.PotentialLink, acc map[string]string) {
+	if _, ok := doc.(*ast.Document); ok {
+		for _, c := range doc.GetChildren() {
+			accumulate(c, pLink, acc)
+		}
+	} else {
+		accumulate(doc, pLink, acc)
+	}
+
+	shortest := ""
+	longest := ""
+	for _, v := range acc {
+		if len(v) > len(longest) {
+			longest = v
+			if shortest == "" {
+				shortest = longest
+			}
+		}
+		if len(v) < len(shortest) {
+			shortest = v
+		}
+	}
+	pLink.Name = normaliseSentence(shortest)
+	pLink.Description = normaliseSentence(longest)
+
+	// if name is missing, tage the last path component from the url (removing any anchor)
+	if len(pLink.Name) == 0 {
+		url := pLink.URL
+		comps := strings.Split(url, "/")
+		last := normaliseSentence(comps[len(comps)-1])
+		regex := regexp.MustCompile(`#.*$`)
+		result := regex.ReplaceAllString(last, "")
+		pLink.Name = result
+	}
+}
+
+// accumulate paragraph textual content
+// lowercase it, removing duplicates along the way
+// populate the potential awesomeLink if an url is found somewhere
+func accumulate(node ast.Node, pLink *model.PotentialLink, acc map[string]string) {
+	if node == nil {
+		return
+	}
+
+	switch v := node.(type) {
+	case *ast.Link:
+		pLink.URL = strings.TrimSpace(string(v.Destination))
+
+	case *ast.Text:
+		content := strings.ToLower(strings.TrimSpace(getContent(node)))
+		if _, seen := acc[content]; !seen {
+			acc[content] = content
+		}
+	}
+
+	for _, child := range node.GetChildren() {
+		GetParagraphContent(child, pLink, acc)
+	}
+}
+
+// remove dot/space/tab/hyphen/... at the begining and end
+func normaliseSentence(s string) (result string) {
+	result = ""
+
+	// start of sentence
+	regex := regexp.MustCompile(`^[\. \t-]*`)
+	result = regex.ReplaceAllString(s, "")
+
+	// end of sentence
+	regex = regexp.MustCompile(`[\. \t-]*$`)
+	result = regex.ReplaceAllString(result, "")
 
 	return
 }
