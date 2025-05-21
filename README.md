@@ -7,7 +7,7 @@ Awesome portal indexer/crawler in GO
 postgres=# create database awesome_portal_db_go
 
 - To upgrade
-/Users/frederic.beuserie/go/bin/migrate -path db/migrations -database "postgres://postgres:example@127.0.0.1/awesome_portal_db_go?sslmode=disable" up
+$HOME/go/bin/migrate -path db/migrations -database "postgres://postgres:example@127.0.0.1/awesome_portal_db_go?sslmode=disable" up
 
 
 ## Tools used:
