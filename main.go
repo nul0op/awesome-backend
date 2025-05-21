@@ -1,6 +1,7 @@
 package main
 
 import (
+	"awesome-portal/backend/indexer"
 	"awesome-portal/backend/server"
 
 	"github.com/joho/godotenv"
@@ -16,7 +17,6 @@ func main() {
 
 	db.Connect()
 
-	// indexer.Index(AW_ROOT, 0)
-	// fmt.Print(json)
+	indexer.Index(AW_ROOT, 0)
 	server.StartServer()
 }

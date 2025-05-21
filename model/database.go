@@ -40,8 +40,6 @@ func Connect() {
 
 	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
 
-	fmt.Println(dsn)
-
 	err := *new(error)
 	db, err = sql.Open("postgres", dsn)
 	if err != nil {

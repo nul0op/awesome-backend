@@ -16,53 +16,7 @@ import (
 	"github.com/gomarkdown/markdown/parser"
 )
 
-// link and it's metadata found while scanning an Awesome Index page (readme).
-// it can become an AwesomeLink at some point
-type PotentialLink struct {
-	parents []string
-	name    string
-	url     string
-}
-
-// act as a constructor for struct
-func NewPotentialLink() PotentialLink {
-	self := PotentialLink{}
-	self.parents = []string{}
-	self.name = ""
-	self.url = ""
-	return self
-}
-
-type AwesomeLink struct {
-	// Name()	string
-	// SetName( name string)
-
-	name        string
-	description string
-	level       uint
-	update_ts   int64
-	origin_url  string // first URL found that defines this link
-	index_url   string
-	clone_url   string
-	origin_hash string //sha256 hash of origin, used to "garante" unicity inside the index
-	watchers    float64
-	subscribers float64
-	topics      []string
-}
-
-// act as a constructor for struct
-func NewAwesomeLink() AwesomeLink {
-	self := AwesomeLink{}
-	self.index_url = ""
-	return self
-}
-
-type GHResponse struct {
-	name      string `json:"string"`
-	full_name string `json:"string"`
-}
-
-func GetProjectMetaData(url string) (metadata AwesomeLink, rc int) {
+func GetProjectMetaData(url string) (metadata model.AwesomeLink, rc int) {
 
 	fmt.Println("Getting project metadata for ", url)
 
@@ -90,10 +44,10 @@ func GetProjectMetaData(url string) (metadata AwesomeLink, rc int) {
 		if rc == 404 {
 			continue
 		}
-		metadata.index_url = target
+		metadata.ReadmeUrl = target
 	}
 
-	if metadata.index_url == "" {
+	if metadata.ReadmeUrl == "" {
 		rc = model.RC_LINK_HAS_NO_INDEX_PAGE
 		return
 	}
@@ -106,13 +60,13 @@ func GetProjectMetaData(url string) (metadata AwesomeLink, rc int) {
 
 	kv := payload_to_json(payload)
 
-	metadata.name = kv["name"].(string)
-	metadata.description = kv["description"].(string)
-	metadata.clone_url = kv["clone_url"].(string)
-	metadata.origin_url = url
+	metadata.Name = kv["name"].(string)
+	metadata.Description = kv["description"].(string)
+	metadata.CloneUrl = kv["clone_url"].(string)
+	metadata.OriginUrl = url
 
-	metadata.subscribers = kv["subscribers_count"].(float64)
-	metadata.watchers = kv["watchers_count"].(float64)
+	metadata.Subscribers = int(kv["subscribers_count"].(float64))
+	metadata.Watchers = int(kv["watchers_count"].(float64))
 
 	date := kv["updated_at"].(string)
 	loc, _ := time.LoadLocation("Japan/Tokyo")
@@ -120,7 +74,7 @@ func GetProjectMetaData(url string) (metadata AwesomeLink, rc int) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	metadata.update_ts = t.Unix()
+	metadata.UpdateTs = t.Unix()
 
 	_topics := kv["topics"].([]interface{})
 	topics := []string{}
@@ -203,13 +157,13 @@ func Index(repo string, depth int) {
 	// FIXME: get head and use last-modified: Thu, 08 May 2025 08:35:35 GMT (curl --head https://nodejs.org/api/fs.html)
 	if rc > 0 {
 		fmt.Println("  AWESOME: found an individual project outside GitHub. saving it to the index")
-		metadata = NewAwesomeLink()
-		metadata.description = "Unknown, outside GitHub !"
-		metadata.subscribers = 0
-		metadata.watchers = 0
-		metadata.clone_url = ""
-		metadata.index_url = ""
-		metadata.origin_url = repo
+		metadata = model.AwesomeLink{}
+		metadata.Description = "Unknown, outside GitHub !"
+		metadata.Subscribers = 0
+		metadata.Watchers = 0
+		metadata.CloneUrl = ""
+		metadata.ReadmeUrl = ""
+		metadata.OriginUrl = repo
 		fmt.Println("  SAVING: ", metadata)
 		//saveLink(metadata)
 		return
@@ -218,13 +172,13 @@ func Index(repo string, depth int) {
 	headers := make(map[string]string)
 	headers["Accept"] = "application/vnd.github.v3.raw"
 
-	rc, content := throttled_fetch(metadata.index_url, http.MethodGet, headers)
+	rc, content := throttled_fetch(metadata.ReadmeUrl, http.MethodGet, headers)
 
 	if rc != 200 {
 		log.Fatal("ERROR: ", model.RC_LINK_HAS_NO_INDEX_PAGE, ": ", rc)
 	}
 
-	if metadata.origin_url != model.AW_ROOT &&
+	if metadata.OriginUrl != model.AW_ROOT &&
 		!is_awl_index_page(string(content)) {
 
 		// we have reached an leaf, go get the project metadata before closing this branch
