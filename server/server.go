@@ -2,28 +2,22 @@ package server
 
 import (
 	controller "awesome-portal/backend/controller"
-	"awesome-portal/backend/model"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	firebase "firebase.google.com/go"
 	"firebase.google.com/go/auth"
 	"google.golang.org/api/option"
 )
 
-// FIXME: put those globals somewhere else ?
 var (
 	firebaseAuth *auth.Client
 	ctx          context.Context
-	// app          *firebase.App
-)
-
-const (
-	firebaseConfigFile = "path/to/your/firebaseConfig.json"
-	firebaseDBURL      = "https://your-firebase-project.firebaseio.com"
 )
 
 func initAuth() {
@@ -41,93 +35,80 @@ func initAuth() {
 	}
 }
 
+// random things to test request handling ...
 func apiStatus(res http.ResponseWriter, req *http.Request) {
-	// if req.URL.Query().Has("test") {
-	// 	res.Write([]byte(fmt.Sprintf("yeah, there was a query: %s\n", req.URL.Query().Get("test"))))
-	// }
+	if req.URL.Query().Has("test") {
+		res.Write([]byte(fmt.Sprintf("there was a query: %s\n", req.URL.Query().Get("test"))))
+	}
 
-	// if req.Body != nil {
-	// 	res.Write([]byte("there was a body !\n"))
-	// 	if body, err := io.ReadAll(req.Body); err == nil {
-	// 		res.Write([]byte(strings.ToUpper(string(body))))
-	// 	}
+	if req.Body != nil {
+		res.Write([]byte("there was a body: converting it in Uppercase\n"))
+		if body, err := io.ReadAll(req.Body); err == nil {
+			res.Write([]byte(strings.ToUpper(string(body))))
+		}
 
-	// 	res.Write([]byte("finished !"))
-	// }
+		res.Write([]byte("finished !"))
+	}
 
 	res.WriteHeader(http.StatusOK)
-	res.Write([]byte("Hello World 2 !"))
 }
 
-// func appMiddleware(next http.Handler) http.handler {
-// 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-// 		fmt.Print("Executing appMiddleware")
-// 		apiStatus()
-// 		next.ServeHTTP(w, r)
-// 		fmt.Print("Executing appMiddleware again")
-// 	}
-// }
+func addCORSHeaders(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Access-Control-Allow-Origin", r.Header.Get("Origin"))
+	w.Header().Add("Access-Control-Allow-Headers", "Content-Type,Authorization")
+	w.Header().Add("Access-Control-Allow-Methods", "GET, OPTIONS")
+}
 
+// validate Firebase token, set CORS
 func authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		addCORSHeaders(w, r)
+
 		if r.Method == "OPTIONS" {
-			fmt.Printf("got option: replying with cors allow all header\n")
-			w.Header().Add("Access-Control-Allow-Origin", "*")
-			w.Header().Add("Access-Control-Allow-Headers", "Content-Type,Authorization")
-			w.Header().Add("Access-Control-Allow-Methods", "GET, OPTIONS, POST, DELETE, PUT")
 			w.WriteHeader(http.StatusOK)
 			return
 		}
 
-		fmt.Printf("\nMethod: %s\n", r.Method)
-		fmt.Print("checking auth\n")
+		// debug
+		// for name, values := range r.Header {
+		// 	for _, value := range values {
+		// 		fmt.Println(name, value)
+		// 	}
+		// }
 
-		for name, values := range r.Header {
-			// Loop over all values for the name.
-			for _, value := range values {
-				fmt.Println(name, value)
-			}
-		}
 		if len(r.Header.Get("Authorization")) == 0 {
-			fmt.Print(("No authentication header found ! exiting\n"))
-			w.Write([]byte("GFY !"))
 			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte("No authentication header found, get out !"))
 			return
 		}
 
-		// we need to remove "Bearer: " prefix
-		result, err := checkToken(r.Header.Get("Authorization")[7:])
-
+		// validate Firebase token (need to remove "Bearer: " prefix)
+		uid, err := checkToken(r.Header.Get("Authorization")[7:])
 		if err != nil {
+			w.WriteHeader(http.StatusForbidden)
 			fmt.Printf("error while checking token: %v\n", err)
+			return
+
 		} else {
-			fmt.Print("auth return: ", result)
+			fmt.Printf("uid [%s] successfuly authenticated\n", uid)
 		}
 
 		next.ServeHTTP(w, r)
-
 	})
-}
-
-func middlewareOne(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Print("Executing middlewareOne\n")
-		next.ServeHTTP(w, r)
-		log.Print("Executing middlewareOne again\n")
-	})
-}
-
-func finalMiddleware(w http.ResponseWriter, r *http.Request) {
-	fmt.Print("Final handler\n")
-	w.Write([]byte("OK"))
 }
 
 func checkToken(token string) (uid string, err error) {
+	uid = ""
+
 	result, err := firebaseAuth.VerifyIDToken(ctx, token)
 	if err != nil {
 		fmt.Printf("Firebase error: cannot verify token: %v\n", err)
+		return
 	}
-	fmt.Printf("Firebase success: token is: %v\n", result)
+
+	fmt.Printf("Firebase success: auth package is: [%v]\n", result)
+	uid = result.UID
 	return
 }
 
@@ -135,14 +116,11 @@ func StartServer() {
 	server := http.NewServeMux()
 	initAuth()
 
-	// finalHandler := http.HandlerFunc(finalMiddleware)
 	server.Handle("/api/status", authMiddleware(http.HandlerFunc(apiStatus)))
 	server.Handle("/links", authMiddleware(http.HandlerFunc(controller.GetLinks)))
 
-	// server.HandleFunc("/api/status", apiStatus)
-
-	fmt.Println("Listening on:", model.AW_ROOT)
-	err := http.ListenAndServe(":3000", server)
+	fmt.Printf("Listening on [%s]\n", os.Getenv("API_PORT"))
+	err := http.ListenAndServe(":"+os.Getenv("API_PORT"), server)
 	if err != nil {
 		fmt.Println("ERROR: ", err)
 	}

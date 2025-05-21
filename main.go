@@ -5,7 +5,7 @@ import (
 
 	"github.com/joho/godotenv"
 
-	db "awesome-portal/backend/database"
+	db "awesome-portal/backend/model"
 )
 
 const GH_API_URL = "https://api.github.com"
