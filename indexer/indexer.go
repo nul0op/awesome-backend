@@ -2,8 +2,6 @@ package indexer
 
 import (
 	"awesome-portal/backend/model"
-	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/gomarkdown/markdown/ast"
@@ -11,7 +9,7 @@ import (
 )
 
 func Index(repo string, depth int) {
-	fmt.Printf("[%d]: scanning git repository: %s\n", depth, repo)
+	model.Log.Debug("[%d]: scanning git repository: %s\n", depth, repo)
 	metadata, rc := getProjectMetaData("https://github.com/sindresorhus/awesome")
 
 	// FIXME: find a way to save get usefull metadata from website outside GitHub ?
@@ -19,7 +17,7 @@ func Index(repo string, depth int) {
 	// FIXME: why should i go look at the constructor ?
 	// FIXME: get head and use last-modified: Thu, 08 May 2025 08:35:35 GMT (curl --head https://nodejs.org/api/fs.html)
 	if rc > 0 {
-		fmt.Println("  AWESOME: found an individual project outside GitHub. saving it to the index")
+		model.Log.Debug("  AWESOME: found an individual project outside GitHub. saving it to the index")
 		metadata = model.AwesomeLink{}
 		metadata.Description = "Unknown, outside GitHub !"
 		metadata.Subscribers = 0
@@ -27,7 +25,7 @@ func Index(repo string, depth int) {
 		metadata.CloneUrl = ""
 		metadata.ReadmeUrl = ""
 		metadata.OriginUrl = repo
-		fmt.Println("  SAVING: ", metadata)
+		model.Log.Debug("  SAVING: ", metadata)
 		//saveLink(metadata)
 		return
 	}
@@ -38,29 +36,29 @@ func Index(repo string, depth int) {
 	rc, content := fetch(metadata.ReadmeUrl, http.MethodGet, headers)
 
 	if rc != 200 {
-		log.Fatal("ERROR: ", model.RC_LINK_HAS_NO_INDEX_PAGE, ": ", rc)
+		model.Log.Error("ERROR: ", model.RC_LINK_HAS_NO_INDEX_PAGE, ": ", rc)
 	}
 
 	if metadata.OriginUrl != model.AW_ROOT &&
 		!isAwesomeIndexPage(content) {
 
 		// we have reached an leaf, go get the project metadata before closing this branch
-		fmt.Println("  AWESOME: found an individual project inside GitHub. saving it to the index")
-		fmt.Println("  SAVING: ", metadata)
+		model.Log.Debug("  AWESOME: found an individual project inside GitHub. saving it to the index")
+		model.Log.Debug("  SAVING: ", metadata)
 		// await saveLink(projectMeta);
 
 		// terminating the branch
 		return
 	}
 
-	fmt.Println("  looks like an Awesome index, walk over it.")
+	model.Log.Debug("  looks like an Awesome index, walk over it.")
 
 	content = stripHtmlPrefix(content)
 	parseMarkdown(content)
 
 	// fmt.Printf("result is %s\n", result[0:31])
-	fmt.Printf("rc is     %d\n", rc)
-	fmt.Print(metadata)
+	model.Log.Debug("rc is     %d\n", rc)
+	model.Log.Debug(metadata)
 
 	// 	console.debug(`  no index page found (${error.message})`);
 	// return;
@@ -94,17 +92,17 @@ func parseMarkdown(md []byte) {
 
 			prev_level = cur_level
 			cur_level = heading.Level
-			fmt.Println("debug before: prev_level: ", prev_level, "current: ", cur_level, "heading: ", heading.Level, "content: ", len(headings), ": ", headings)
+			model.Log.Debug("before: prev_level: ", prev_level, "current: ", cur_level, "heading: ", heading.Level, "content: ", len(headings), ": ", headings)
 
 			// fmt.Print("HEADING: ", getContent(heading))
 			if cur_level > prev_level {
 				// if we pass through an heading, we push into the heading stack the entry
-				fmt.Println("increasing headings")
+				model.Log.Debug("increasing headings")
 				// headings = append(headings, getContent(heading))
 				headings = append(headings, heading.HeadingID)
 
 			} else if cur_level < prev_level {
-				fmt.Println("decresing headings")
+				model.Log.Debug("decresing headings")
 				if len(headings) > 0 {
 					headings = headings[:len(headings)-1]
 				}
@@ -122,26 +120,26 @@ func parseMarkdown(md []byte) {
 			}
 
 			// fmt.Println(prev_level, " VS ", cur_level)
-			fmt.Println("debug after: prev_level: ", prev_level, "current: ", cur_level, "heading: ", heading.Level, "content: ", len(headings), ": ", headings)
+			model.Log.Debug("after: prev_level: ", prev_level, "current: ", cur_level, "heading: ", heading.Level, "content: ", len(headings), ": ", headings)
 		}
 		if paragraph, ok := node.(*ast.Paragraph); ok && entering {
 			// this is just a container,
-			fmt.Println("PARAGRAPH1: ", getFirstChildLabel(paragraph))
+			model.Log.Debug("PARAGRAPH1: ", getFirstChildLabel(paragraph))
 			// the first text sibling OR the first link.text.value be used as a heading
-			fmt.Println("PARAGRAPH2 ", string("FIXME: go get the first "))
+			model.Log.Debug("PARAGRAPH2 ", string("FIXME: go get the first "))
 
 		}
 		if link, ok := node.(*ast.Link); ok && entering {
 			// fmt.Println("LINK1: ", getContent(link))
 			// we break on this line
-			fmt.Println("LINK2: ", string(link.Destination))
+			model.Log.Debug("LINK2: ", string(link.Destination))
 
 		}
 		if _, ok := node.(*ast.List); ok && entering {
-			fmt.Println("LIST: ", getContent(node))
+			model.Log.Debug("LIST: ", getContent(node))
 		}
 		if _, ok := node.(*ast.ListItem); ok && entering {
-			fmt.Println("ITEM: ", getContent(node))
+			model.Log.Debug("ITEM: ", getContent(node))
 		}
 		return ast.GoToNext
 	})

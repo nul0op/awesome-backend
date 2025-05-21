@@ -16,7 +16,7 @@ func GetLinks() (result []AwesomeLink) {
 	rows, err := db.Query(select_statement)
 
 	if err != nil {
-		fmt.Printf("SQL Error: %s\nreturning empty result set", err)
+		Log.Errorf("SQL Error: %s. returning empty result set", err)
 		return
 	}
 
@@ -43,7 +43,7 @@ func Connect() {
 	err := *new(error)
 	db, err = sql.Open("postgres", dsn)
 	if err != nil {
-		fmt.Printf("cannot connect to database with dsn [%s]\n", dsn)
+		Log.Errorf("unable to connect to database with dsn [%s]\n", dsn)
 	}
 
 	// FIXME:

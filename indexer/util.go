@@ -17,7 +17,7 @@ import (
 
 func getProjectMetaData(url string) (metadata model.AwesomeLink, rc int) {
 
-	fmt.Println("Getting project metadata for ", url)
+	model.Log.Debug("Getting project metadata for ", url)
 
 	if strings.Index(url, "https://github.com/") != 0 {
 		rc = model.RC_LINK_IS_NOT_ON_GITHUB
@@ -36,10 +36,10 @@ func getProjectMetaData(url string) (metadata model.AwesomeLink, rc int) {
 
 	to_try := [2]string{"README.md", "readme.md"}
 	for _, page := range to_try {
-		fmt.Print("trying: ", page, " ... ")
+		model.Log.Debug("trying: ", page, " ... ")
 		target := fmt.Sprintf("%s/repos/%s/%s/contents/%s", model.GH_API_URL, username, repo, page)
 		rc, _ := fetch(target, http.MethodHead, headers)
-		fmt.Println(rc)
+		model.Log.Debug(rc)
 		if rc == 404 {
 			continue
 		}
@@ -81,7 +81,7 @@ func getProjectMetaData(url string) (metadata model.AwesomeLink, rc int) {
 		// fmt.Println(v)
 		topics = append(topics, v.(string))
 	}
-	fmt.Println(strings.Join(topics, ":"))
+	model.Log.Debug(strings.Join(topics, ":"))
 
 	// metadata = gh_response
 	rc = 0
@@ -118,7 +118,7 @@ func getParentsPath(node ast.Node) (parents []string) {
 
 	content := getContent(node)
 	if len(content) > 0 {
-		fmt.Println("PARENT: ", content)
+		model.Log.Debug("PARENT: ", content)
 	}
 
 	return
@@ -171,7 +171,7 @@ func payloadToJson(data []byte) map[string]interface{} {
 }
 
 func fetch(url string, method string, headers map[string]string) (rc int, payload []byte) {
-	log.Println("DEBUG: fetching url: ", url)
+	model.Log.Debug("fetching url: ", url)
 
 	// FIXME: look at the header and throttle when the remote warn us instead
 	time.Sleep(1 * time.Second)
@@ -182,7 +182,7 @@ func fetch(url string, method string, headers map[string]string) (rc int, payloa
 
 	req, error := http.NewRequest(method, url, nil)
 	if error != nil {
-		log.Fatal(error)
+		model.Log.Error(error)
 	}
 
 	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("GH_TOKEN")))
@@ -193,14 +193,14 @@ func fetch(url string, method string, headers map[string]string) (rc int, payloa
 
 	res, error := gh_client.Do(req)
 	if error != nil {
-		log.Fatal(error)
+		model.Log.Error(error)
 	}
 	rc = res.StatusCode
 
 	payload, error = io.ReadAll(res.Body)
 
 	if error != nil {
-		log.Fatal(error)
+		model.Log.Error(error)
 	}
 
 	return
