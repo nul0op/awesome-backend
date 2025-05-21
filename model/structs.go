@@ -25,16 +25,17 @@ type GHResponse struct {
 // link and it's metadata found while scanning an Awesome Index page (readme).
 // it can become an AwesomeLink at some point
 type PotentialLink struct {
-	parents []string
-	name    string
-	url     string
+	Parents []string
+	Name    string
+	Name2   string
+	URL     string
 }
 
-// act as a constructor for struct
-func NewPotentialLink() PotentialLink {
-	self := PotentialLink{}
-	self.parents = []string{}
-	self.name = ""
-	self.url = ""
-	return self
-}
+// // act as a constructor for struct
+// func NewPotentialLink() PotentialLink {
+// 	self := PotentialLink{}
+// 	self.parents = []string{}
+// 	self.name = ""
+// 	self.url = ""
+// 	return self
+// }

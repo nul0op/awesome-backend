@@ -2,7 +2,9 @@ package indexer
 
 import (
 	"awesome-portal/backend/model"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gomarkdown/markdown/ast"
 	"github.com/gomarkdown/markdown/parser"
@@ -82,6 +84,9 @@ func parseMarkdown(md []byte) {
 	prev_level := -1
 	cur_level := -1
 
+	pLink := model.PotentialLink{}
+	pLinks := make(map[string]model.PotentialLink)
+
 	ast.WalkFunc(parsed_document, func(node ast.Node, entering bool) ast.WalkStatus {
 
 		// textual content like heading name
@@ -92,7 +97,7 @@ func parseMarkdown(md []byte) {
 
 			prev_level = cur_level
 			cur_level = heading.Level
-			model.Log.Debug("before: prev_level: ", prev_level, "current: ", cur_level, "heading: ", heading.Level, "content: ", len(headings), ": ", headings)
+			model.Log.Debugf("before: prev: %d cur: %d heading: %d len: %d: %s", prev_level, cur_level, heading.Level, len(headings), headings)
 
 			// fmt.Print("HEADING: ", getContent(heading))
 			if cur_level > prev_level {
@@ -120,27 +125,74 @@ func parseMarkdown(md []byte) {
 			}
 
 			// fmt.Println(prev_level, " VS ", cur_level)
-			model.Log.Debug("after: prev_level: ", prev_level, "current: ", cur_level, "heading: ", heading.Level, "content: ", len(headings), ": ", headings)
+			model.Log.Debugf("after: prev: %d cur: %d heading: %d len: %d: %s", prev_level, cur_level, heading.Level, len(headings), headings)
+			model.Log.Debug("--")
 		}
-		if paragraph, ok := node.(*ast.Paragraph); ok && entering {
-			// this is just a container,
-			model.Log.Debug("PARAGRAPH1: ", getFirstChildLabel(paragraph))
-			// the first text sibling OR the first link.text.value be used as a heading
-			model.Log.Debug("PARAGRAPH2 ", string("FIXME: go get the first "))
+		// if paragraph, ok := node.(*ast.Paragraph); ok && entering {
+		// 	// this is just a container,
+		// 	model.Log.Debug("PARAGRAPH1: ", getFirstChildLabel(paragraph))
+		// 	// the first text sibling OR the first link.text.value be used as a heading
+		// 	model.Log.Debug("PARAGRAPH2 ", string("FIXME: go get the first "))
 
-		}
+		// }
+
 		if link, ok := node.(*ast.Link); ok && entering {
-			// fmt.Println("LINK1: ", getContent(link))
-			// we break on this line
-			model.Log.Debug("LINK2: ", string(link.Destination))
+			pLink.URL = strings.ToLower(string(link.Destination))
+			pLink.Name = GetSiblingTextContent(link)
 
+			if _, hasBeenSeen := pLinks[pLink.URL]; hasBeenSeen {
+				model.Log.Warn("possible duplicate link found !: %s", pLink.URL)
+			} else {
+				pLinks[pLink.URL] = pLink
+			}
 		}
-		if _, ok := node.(*ast.List); ok && entering {
-			model.Log.Debug("LIST: ", getContent(node))
-		}
-		if _, ok := node.(*ast.ListItem); ok && entering {
-			model.Log.Debug("ITEM: ", getContent(node))
-		}
+		// if _, ok := node.(*ast.List); ok && entering {
+		// 	model.Log.Debug("LIST: ", getContent(node))
+		// }
+		// if _, ok := node.(*ast.ListItem); ok && entering {
+		// 	model.Log.Debug("ITEM: ", getContent(node))
+		// }
 		return ast.GoToNext
 	})
+
+	// FIXME: remove anchor, ...
+	for _, v := range pLinks {
+		fmt.Println("LINK FOUND: ", v)
+	}
+}
+
+// func GetChildrenTextContent(node ast.Node) (result string) {
+// 	texts := []string{}
+
+// 	for _, _ = range node.GetChildren() {
+// 		text := getContent(node.GetChildren()[0])
+// 		if len(text) > 0 {
+// 			texts = append(texts, text)
+// 		}
+// 	}
+
+// 	return strings.Join(texts, ";")
+// }
+
+// FIXME: multiple formatting can be set (and thus multiple children), i guess we should go deeper to fetch all the content
+// beware of the case were there is link below => we should get out if we find a paragraph.
+func GetSiblingTextContent(node ast.Node) string {
+	texts := make(map[string]string)
+
+	for _, _ = range node.GetParent().GetChildren() {
+		text := getContent(node.GetChildren()[0])
+		if len(text) == 0 {
+			continue
+		}
+		if _, hasBeenSeen := texts[text]; !hasBeenSeen {
+			texts[text] = text
+		}
+	}
+
+	results := []string{}
+	for _, v := range texts {
+		results = append(results, v)
+	}
+
+	return strings.Join(results, ";")
 }
