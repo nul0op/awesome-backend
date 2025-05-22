@@ -1,8 +1,8 @@
 package main
 
 import (
-	"awesome-portal/backend/indexer"
 	"awesome-portal/backend/model"
+	"awesome-portal/backend/server"
 
 	"github.com/joho/godotenv"
 )
@@ -19,8 +19,8 @@ func main() {
 	model.Connect()
 
 	model.Log.Info("Launching indexing")
-	indexer.Index(AW_ROOT, 0)
+	// indexer.Index(AW_ROOT, 0)
 
-	// model.Log.Info("Starting web server")
-	// server.StartServer()
+	model.Log.Info("Starting web server")
+	server.StartServer()
 }

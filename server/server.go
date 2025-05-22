@@ -121,6 +121,7 @@ func StartServer() {
 	server.Handle("/links", authMiddleware(http.HandlerFunc(controller.GetLinks)))
 
 	// main.ALogger.Info("Listening on [%s]\n", os.Getenv("API_PORT"))
+	fmt.Printf("Listening on [%s]\n", os.Getenv("API_PORT"))
 	err := http.ListenAndServe(":"+os.Getenv("API_PORT"), server)
 	if err != nil {
 		model.Log.Error(err)

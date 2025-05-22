@@ -173,17 +173,44 @@ func fetch(url string, method string, headers map[string]string) (rc int, payloa
 	return
 }
 
-func GetParagraphContent(doc ast.Node, pLink *model.PotentialLink, acc map[string]string) {
-	if _, ok := doc.(*ast.Document); ok {
-		for _, c := range doc.GetChildren() {
-			accumulate(c, pLink, acc)
-		}
-	} else {
-		accumulate(doc, pLink, acc)
+// return the number of parent a given node has.
+func parentCount(node ast.Node) (count int) {
+	if node == nil {
+		return 1
+	}
+	return parentCount(node.GetParent()) + 1
+}
+
+// walk up the tree and get all headings and paragraph labels in an ordered list
+func getParents(node ast.Node, parents map[string]string) {
+	if node == nil {
+		return
 	}
 
-	shortest := ""
-	longest := ""
+	getParents(node.GetParent(), parents)
+
+	children := node.GetChildren()
+	if len(children) > 0 {
+		txt := strings.ToLower(getContent(node.GetChildren()[0]))
+		if len(txt) > 0 {
+			if _, exists := parents[txt]; exists {
+				parents[txt] = txt
+			}
+		}
+	}
+}
+
+func getParagraphContent(doc ast.Node, pLink *model.PotentialLink, acc map[string]string) {
+	if _, ok := doc.(*ast.Document); ok {
+		for _, c := range doc.GetChildren() {
+			accumulateChildrenText(c, pLink, acc)
+		}
+	} else {
+		accumulateChildrenText(doc, pLink, acc)
+	}
+
+	shortest, longest := "", ""
+
 	for _, v := range acc {
 		if len(v) > len(longest) {
 			longest = v
@@ -195,31 +222,34 @@ func GetParagraphContent(doc ast.Node, pLink *model.PotentialLink, acc map[strin
 			shortest = v
 		}
 	}
-	pLink.Name = normaliseSentence(shortest)
-	pLink.Description = normaliseSentence(longest)
+	pLink.Name = normalize(shortest)
+	pLink.Description = normalize(longest)
 
 	// if name is missing, tage the last path component from the url (removing any anchor)
 	if len(pLink.Name) == 0 {
 		url := pLink.URL
 		comps := strings.Split(url, "/")
-		last := normaliseSentence(comps[len(comps)-1])
+		last := normalize(comps[len(comps)-1])
 		regex := regexp.MustCompile(`#.*$`)
 		result := regex.ReplaceAllString(last, "")
 		pLink.Name = result
 	}
 }
 
-// accumulate paragraph textual content
+// accumulate paragraph textual content (top->down)
 // lowercase it, removing duplicates along the way
 // populate the potential awesomeLink if an url is found somewhere
-func accumulate(node ast.Node, pLink *model.PotentialLink, acc map[string]string) {
+// depth = 1 means only compute the current node. =x means descend as many as x level down the tree
+func accumulateChildrenText(node ast.Node, pLink *model.PotentialLink, acc map[string]string) {
 	if node == nil {
 		return
 	}
 
 	switch v := node.(type) {
 	case *ast.Link:
-		pLink.URL = strings.TrimSpace(string(v.Destination))
+		if pLink != nil {
+			pLink.URL = strings.TrimSpace(string(v.Destination))
+		}
 
 	case *ast.Text:
 		content := strings.ToLower(strings.TrimSpace(getContent(node)))
@@ -229,12 +259,12 @@ func accumulate(node ast.Node, pLink *model.PotentialLink, acc map[string]string
 	}
 
 	for _, child := range node.GetChildren() {
-		GetParagraphContent(child, pLink, acc)
+		getParagraphContent(child, pLink, acc)
 	}
 }
 
 // remove dot/space/tab/hyphen/... at the begining and end
-func normaliseSentence(s string) (result string) {
+func normalize(s string) (result string) {
 	result = ""
 
 	// start of sentence
@@ -246,4 +276,16 @@ func normaliseSentence(s string) (result string) {
 	result = regex.ReplaceAllString(result, "")
 
 	return
+}
+
+// get a short name of the type of v which excludes package name
+// and strips "()" from the end
+// in part borrowed from gomarkdown lib since it's not exported by them
+func getNodeType(node ast.Node) string {
+	s := fmt.Sprintf("%T", node)
+	s = strings.ToLower(strings.TrimSuffix(s, "()"))
+	if idx := strings.Index(s, "."); idx != -1 {
+		return s[idx+1:]
+	}
+	return s
 }

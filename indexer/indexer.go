@@ -2,8 +2,8 @@ package indexer
 
 import (
 	"awesome-portal/backend/model"
-	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gomarkdown/markdown/ast"
 	"github.com/gomarkdown/markdown/parser"
@@ -71,99 +71,90 @@ func parseMarkdown(md []byte) {
 	parsed_document := p.Parse(md)
 
 	pLink := model.PotentialLink{}
+	previousName := ""
+
 	pLinks := make(map[string]model.PotentialLink)
 
+	previousListItemParentCount := 0
+	listItemParentCount := 0
+
+	trail := [5]string{}
+	breaks := "heading-link-paragraph-list-listitem"
+
+	headings := []string{}
+	lastSeenHeading := ""
+
 	ast.WalkFunc(parsed_document, func(node ast.Node, entering bool) ast.WalkStatus {
-		if _, ok := node.(*ast.Heading); ok && entering {
 
-			// fmt.Print("HEADING: ", getContent(heading))
-			// if cur_level > prev_level {
-			// 	// if we pass through an heading, we push into the heading stack the entry
-			// 	model.Log.Debug("increasing headings")
-			// 	// headings = append(headings, getContent(heading))
-			// 	headings = append(headings, heading.HeadingID)
+		// we save the last 5 kind of node we see,
+		// so last[Ø] is the current, last[1] is the one before, ...
+		nt := getNodeType(node)
 
-			// } else if cur_level < prev_level {
-			// 	model.Log.Debug("decresing headings")
-			// 	if len(headings) > 0 {
-			// 		headings = headings[:len(headings)-1]
-			// 	}
-
-			// } else if cur_level == prev_level {
-			// 	if len(headings) > 0 {
-			// 		headings = headings[:len(headings)-1]
-			// 	}
-			// 	headings = append(headings, heading.HeadingID)
-			// replace the last
-			// headings[heading.Level-1] = getContent(heading)
-
-			// } else {
-			// 	log.Panic("Oops.. mismatch in heading", len(headings), " VS ", heading.Level)
+		if heading, ok := node.(*ast.Heading); ok && entering {
+			lastSeenHeading = string(heading.HeadingID)
 		}
-		// }
 
+		if strings.Contains(breaks, nt) {
+			trail[4] = trail[3]
+			trail[3] = trail[2]
+			trail[2] = trail[1]
+			trail[1] = trail[0]
+			trail[0] = nt
+			// model.Log.Debugf("trail of node is: %s", trail)
+		}
+
+		// case 1: entering an heading paragraph
+		// case 1: IN
+		if trail[0] == "list" && trail[1] == "heading" {
+			headings = append(headings, lastSeenHeading)
+		}
+
+		// case 2: entering a sublist (no heading involved, only spacing)
+		// case 2: IN
+		if trail[0] == "list" && trail[1] == "paragraph" {
+			headings = append(headings, "SUBSTRING: "+previousName)
+		}
+
+		// case 2 OUT
+		if trail[0] == "listitem" {
+			previousListItemParentCount = listItemParentCount
+			listItemParentCount = parentCount(node)
+			if listItemParentCount < previousListItemParentCount {
+				headings = headings[:len(headings)-1]
+			}
+		}
+
+		// only problem here is the nested list thing
 		texts := map[string]string{}
 		if link, ok := node.(*ast.Link); ok && entering {
-			GetParagraphContent(link.GetParent(), &pLink, texts)
+			previousName = pLink.Name
+			getParagraphContent(link.GetParent(), &pLink, texts)
 
-			if _, hasBeenSeen := pLinks[pLink.URL]; hasBeenSeen {
+			if _, seen := pLinks[pLink.URL]; seen {
 				model.Log.Warnf("possible duplicate link found: %s", pLink.URL)
 			} else {
 				pLinks[pLink.URL] = pLink
 			}
 
+			// model.Log.Debugf("PARENT : %s => %s", pLink.URL, strings.Join(pp, " > "))
+			pLink.Parents = strings.Join(headings, " > ")
 		}
-
-		// if link, ok := node.(*ast.Link); ok && entering {
-		// 	pLink.URL = strings.ToLower(string(link.Destination))
-		// 	pLink.Name = GetSiblingTextContent(link)
-		// 	fmt.Println(ast.ToString(link.GetParent()))
-		// 	// parents := []string{}
-		// 	// getParents(link, &parents)
-
-		// 	if _, hasBeenSeen := pLinks[pLink.URL]; hasBeenSeen {
-		// 		model.Log.Warn("possible duplicate link found !: %s", pLink.URL)
-		// 	} else {
-		// 		pLinks[pLink.URL] = pLink
-		// 	}
-		// }
 
 		return ast.GoToNext
 	})
 
-	// FIXME: remove anchor, ...
 	for _, v := range pLinks {
-		fmt.Printf("LINK FOUND: name: [%s] description: [%s] url: [%s]\n", v.Name, v.Description, v.URL)
-	}
-}
+		// fmt.Printf("LINK FOUND: name: [%s] url: [%s] [%s]\n", v.Name, v.URL, v.Parents)
 
-// walk up the tree and get all textual content in an ordered list
-// take into accounts link label and headings
-func getParents(node ast.Node, parents *[]string) {
-	if node == nil {
-		return
-	}
-
-	// recursively walks up
-	fmt.Println(ast.ToString(node))
-
-	// model.Log.Debug("PARENT: walking up: ")
-	// if heading, ok := node.(*ast.Heading); ok {
-	// 	fmt.Println("PARENT: found heading: ", heading.HeadingID)
-	// }
-	// if list, ok := node.(*ast.List); ok {
-	// 	fmt.Println("LIST: ", list.ID)
-	// }
-	// if listItem, ok := node.(*ast.ListItem); ok {
-	// 	fmt.Println("ITEM: ", listItem.ID)
-	// }
-
-	getParents(node.GetParent(), parents)
-
-	content := getContent(node)
-
-	if len(content) > 0 {
-		model.Log.Debug("PARENT: ", content)
-		//parents = append(parents, content)
+		// we do not index anchor
+		if string(v.URL[0]) == "#" {
+			continue
+		}
+		link := model.AwesomeLink{}
+		link.Name = v.Name
+		link.Description = v.Description
+		link.Topics = v.Parents
+		link.OriginUrl = v.URL
+		model.SaveLinks(link)
 	}
 }

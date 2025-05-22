@@ -1,20 +1,17 @@
 package model
 
 type AwesomeLink struct {
-	// Name()	string
-	// SetName( name string)
-
-	Name        string
-	Description string
-	Level       uint
-	UpdateTs    int64
-	OriginUrl   string // first URL found that defines this link
-	ReadmeUrl   string
-	CloneUrl    string
-	OriginHash  string //sha256 hash of origin, used to "garante" unicity inside the index
-	Watchers    int
-	Subscribers int
-	Topics      []string
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Level       uint   `json:"level"`
+	UpdateTs    int64  `json:"updated"`
+	OriginUrl   string `json:"originUrl"`
+	ReadmeUrl   string `json:"-"`
+	CloneUrl    string `json:"-"`
+	OriginHash  string `json:"-"`
+	Watchers    int    `json:"subscribersCount"`
+	Subscribers int    `json:"watchersCount"`
+	Topics      string `json:"-"`
 }
 
 type GHResponse struct {
@@ -25,7 +22,7 @@ type GHResponse struct {
 // link and it's metadata found while scanning an Awesome Index page (readme).
 // it can become an AwesomeLink at some point
 type PotentialLink struct {
-	Parents     []string
+	Parents     string
 	Name        string
 	Description string
 	URL         string
