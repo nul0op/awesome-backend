@@ -15,8 +15,11 @@ CREATE TABLE "link" (
     subscribers_count integer default 0,
     watchers_count integer default 0,
     topics character varying(255),
-    updated character varying(255)
+    updated bigint
 );
+
+CREATE EXTENSION pg_trgm;
+CREATE INDEX index_users_full_name ON link using gin ((name || ' ' || description) gin_trgm_ops);
 
 -- ALTER TABLE public.link OWNER TO postgres;
 -- CREATE SEQUENCE public.link_id_seq

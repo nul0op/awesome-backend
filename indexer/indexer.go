@@ -2,6 +2,8 @@ package indexer
 
 import (
 	"awesome-portal/backend/model"
+	"awesome-portal/backend/util"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -9,63 +11,100 @@ import (
 	"github.com/gomarkdown/markdown/parser"
 )
 
-func Index(repo string, depth int) {
-	model.Log.Debug("[%d]: scanning git repository: %s\n", depth, repo)
-	metadata, rc := getProjectMetaData("https://github.com/sindresorhus/awesome")
+func Index(link string, depth int, parentCount int) {
+	logPrefix := strings.Repeat("  ", depth) + fmt.Sprintf("[%d/%d]", depth, parentCount)
+
+	util.Log.Debugf("%s indexing link: %s", logPrefix, link)
+	util.Log.Debugf("%s Getting project metadata", logPrefix)
+
+	metadata, rc := getProjectMetaData(link)
 
 	// FIXME: find a way to save get usefull metadata from website outside GitHub ?
 	// FIXME: go get the HEAD of the website and the META tags ?";
 	// FIXME: why should i go look at the constructor ?
 	// FIXME: get head and use last-modified: Thu, 08 May 2025 08:35:35 GMT (curl --head https://nodejs.org/api/fs.html)
-	if rc > 0 {
-		model.Log.Debug("  AWESOME: found an individual project outside GitHub. saving it to the index")
-		metadata = model.AwesomeLink{}
+	if rc == model.RC_LINK_HAS_NO_INDEX_PAGE {
+		util.Log.Warnf("%s RC_LINK_HAS_NO_INDEX_PAGE: indexing partial data", logPrefix)
+		metadata = model.NewAwesomeLink()
 		metadata.Description = "Unknown, outside GitHub !"
 		metadata.Subscribers = 0
 		metadata.Watchers = 0
 		metadata.CloneUrl = ""
 		metadata.ReadmeUrl = ""
-		metadata.OriginUrl = repo
-		model.Log.Debug("  SAVING: ", metadata)
+		metadata.OriginUrl = link
+		util.Log.Warnf("%s SAVING: %+v", logPrefix, metadata)
 		//saveLink(metadata)
 		return
+
+	} else if rc == model.RC_LINK_IS_NOT_A_PROJECT_ROOT {
+		util.Log.Infof("%s AWESOME: found an individual project outside GitHub. saving it to the index", logPrefix)
+		metadata = model.NewAwesomeLink()
+		metadata.Description = "Unknown, outside GitHub !"
+		metadata.Subscribers = 0
+		metadata.Watchers = 0
+		metadata.CloneUrl = ""
+		metadata.ReadmeUrl = ""
+		metadata.OriginUrl = link
+		util.Log.Infof("%s SAVING: %+v", logPrefix, metadata)
+		//saveLink(metadata)
+		return
+
+	} else if rc == model.RC_LINK_IS_A_USER_LANDING_PAGE {
+		util.Log.Debugf("%s stopping: user landing page on github ... unable to process", logPrefix)
+		return
+
+	} else if rc == model.RC_LINK_IS_NOT_ON_GITHUB {
+		// FIXME: try to gather some metadata from external api ? or HEAD last-updated, ...
+		// also: look if there is some pub inside the page and drop it if this is the case
+		util.Log.Debugf("%s stopping: something outside of github ... unable to process", logPrefix)
+		return
 	}
+
+	metadata.Level = depth
 
 	headers := make(map[string]string)
 	headers["Accept"] = "application/vnd.github.v3.raw"
 
-	rc, content := fetch(metadata.ReadmeUrl, http.MethodGet, headers)
+	rc, content := callGithubAPI(metadata.ReadmeUrl, http.MethodGet, headers)
 
 	if rc != 200 {
-		model.Log.Error("ERROR: ", model.RC_LINK_HAS_NO_INDEX_PAGE, ": ", rc)
+		util.Log.Debugf("%s url has no index page. saving page metadata and stopping branch (RC_LINK_HAS_NO_INDEX_PAGE)", logPrefix)
+		return
 	}
 
 	if metadata.OriginUrl != model.AW_ROOT &&
 		!isAwesomeIndexPage(content) {
 
 		// we have reached an leaf, go get the project metadata before closing this branch
-		model.Log.Debug("  AWESOME: found an individual project inside GitHub. saving it to the index")
-		model.Log.Debug("  SAVING: ", metadata)
-		// await saveLink(projectMeta);
-
-		// terminating the branch
+		util.Log.Infof("%s AWESOME: found project inside GitHub. saving it to the index", logPrefix)
+		util.Log.Infof("%s SAVING: %+v ", logPrefix, metadata)
 		return
 	}
 
-	model.Log.Debug("  looks like an Awesome index, walk over it.")
+	util.Log.Debugf("%s looks like an Awesome index, walk over it.", logPrefix)
 
 	content = stripHtmlPrefix(content)
-	parseMarkdown(content)
+	pLinks := parseMarkdown(content, depth)
+	depth++
+	// util.Log.Debug(metadata)
 
-	// fmt.Printf("result is %s\n", result[0:31])
-	model.Log.Debug("rc is     %d\n", rc)
-	model.Log.Debug(metadata)
+	count := 0
+	for _, v := range pLinks {
+		count++
+		logProgress(depth, count, fmt.Sprintf("found link: [%s]. indexinx [%s]", v.Name, v.URL))
+		Index(v.URL, depth, count)
+	}
 
-	// 	console.debug(`  no index page found (${error.message})`);
-	// return;
 }
 
-func parseMarkdown(md []byte) {
+func logProgress(c1 int, c2 int, s string) {
+	prefix := strings.Repeat(" ", c1)
+	util.Log.Debugf("%s [%d/%d]: ", prefix, c1, c2)
+}
+
+func parseMarkdown(md []byte, depth int) map[string]model.PotentialLink {
+	logPrefix := strings.Repeat(" ", depth)
+
 	extensions := parser.CommonExtensions | parser.AutoHeadingIDs | parser.NoEmptyLineBeforeBlock
 	p := parser.NewWithExtensions(extensions)
 	parsed_document := p.Parse(md)
@@ -100,7 +139,7 @@ func parseMarkdown(md []byte) {
 			trail[2] = trail[1]
 			trail[1] = trail[0]
 			trail[0] = nt
-			// model.Log.Debugf("trail of node is: %s", trail)
+			// util.Log.Debugf("trail of node is: %s", trail)
 		}
 
 		// case 1: entering an heading paragraph
@@ -131,30 +170,40 @@ func parseMarkdown(md []byte) {
 			getParagraphContent(link.GetParent(), &pLink, texts)
 
 			if _, seen := pLinks[pLink.URL]; seen {
-				model.Log.Warnf("possible duplicate link found: %s", pLink.URL)
+				util.Log.Warnf("%s possible duplicate link found: %s", logPrefix, pLink.URL)
 			} else {
 				pLinks[pLink.URL] = pLink
 			}
 
-			// model.Log.Debugf("PARENT : %s => %s", pLink.URL, strings.Join(pp, " > "))
+			// util.Log.Debugf("PARENT : %s => %s", pLink.URL, strings.Join(pp, " > "))
 			pLink.Parents = strings.Join(headings, " > ")
 		}
 
 		return ast.GoToNext
 	})
 
-	for _, v := range pLinks {
-		// fmt.Printf("LINK FOUND: name: [%s] url: [%s] [%s]\n", v.Name, v.URL, v.Parents)
+	return pLinks
+	// for _, v := range pLinks {
+	// 	// fmt.Printf("LINK FOUND: name: [%s] url: [%s] [%s]\n", v.Name, v.URL, v.Parents)
 
-		// we do not index anchor
-		if string(v.URL[0]) == "#" {
-			continue
-		}
-		link := model.AwesomeLink{}
-		link.Name = v.Name
-		link.Description = v.Description
-		link.Topics = v.Parents
-		link.OriginUrl = v.URL
-		model.SaveLinks(link)
-	}
+	// 	// we do not index anchor
+	// 	if string(v.URL[0]) == "#" {
+	// 		continue
+	// 	}
+	// 	link := model.AwesomeLink{}
+	// 	link.Name = v.Name
+	// 	link.Description = v.Description
+	// 	link.Topics = v.Parents
+	// 	link.OriginUrl = v.URL
+	// 	link.OriginHash = util.GetSHA1(v.URL)
+	// 	link.UpdateTs = time.Now().Unix()
+	// 	link.Subscribers = rand.IntN(4096)
+	// 	link.Watchers = rand.IntN(4096)
+
+	// 	if len(model.GetLink(link.OriginHash)) > 0 {
+	// 		// FIXME implement update
+	// 	} else {
+	// 		model.SaveLink(link)
+	// 	}
+	// }
 }

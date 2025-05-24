@@ -2,7 +2,7 @@ package server
 
 import (
 	controller "awesome-portal/backend/controller"
-	"awesome-portal/backend/model"
+	"awesome-portal/backend/util"
 	"context"
 	"fmt"
 	"io"
@@ -26,12 +26,12 @@ func initAuth() {
 
 	app, err := firebase.NewApp(ctx, nil, opt)
 	if err != nil {
-		model.Log.Error("Firebase: cannot get app:", "error", err)
+		util.Log.Error("Firebase: cannot get app:", "error", err)
 	}
 
 	firebaseAuth, err = app.Auth(ctx)
 	if err != nil {
-		model.Log.Error("Firebase: cannot get auth client:", "error", err)
+		util.Log.Error("Firebase: cannot get auth client:", "error", err)
 	}
 }
 
@@ -87,11 +87,11 @@ func authMiddleware(next http.Handler) http.Handler {
 		uid, err := checkToken(r.Header.Get("Authorization")[7:])
 		if err != nil {
 			w.WriteHeader(http.StatusForbidden)
-			model.Log.Warnf("unable to check token: %v\n", err)
+			util.Log.Warnf("unable to check token: %v\n", err)
 			return
 
 		} else {
-			model.Log.Debug("uid [%s] successfuly authenticated", uid)
+			util.Log.Debugf("uid [%s] successfuly authenticated", uid)
 		}
 
 		next.ServeHTTP(w, r)
@@ -103,11 +103,11 @@ func checkToken(token string) (uid string, err error) {
 
 	result, err := firebaseAuth.VerifyIDToken(ctx, token)
 	if err != nil {
-		model.Log.Errorf("Firebase: unable to verify token: %v", err)
+		util.Log.Errorf("Firebase: unable to verify token: %v", err)
 		return
 	}
 
-	model.Log.Debugf("Firebase success: auth package is: [%v]", result)
+	util.Log.Debugf("Firebase success: auth package is: [%v]", result)
 	uid = result.UID
 	return
 }
@@ -119,11 +119,13 @@ func StartServer() {
 
 	server.Handle("/api/status", authMiddleware(http.HandlerFunc(apiStatus)))
 	server.Handle("/links", authMiddleware(http.HandlerFunc(controller.GetLinks)))
+	// server.Handle("/api/status", http.HandlerFunc(apiStatus))
+	// server.Handle("/links", http.HandlerFunc(controller.GetLinks))
 
 	// main.ALogger.Info("Listening on [%s]\n", os.Getenv("API_PORT"))
 	fmt.Printf("Listening on [%s]\n", os.Getenv("API_PORT"))
 	err := http.ListenAndServe(":"+os.Getenv("API_PORT"), server)
 	if err != nil {
-		model.Log.Error(err)
+		util.Log.Error(err)
 	}
 }
